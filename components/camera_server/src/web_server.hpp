@@ -11,6 +11,7 @@
 #include "esp_http_server.h"
 
 #include "camera.hpp"
+#include "detector.hpp"
 
 namespace camera_server {
 
@@ -38,7 +39,7 @@ public:
         std::uint64_t bytes = 0;
     };
 
-    explicit WebServer(Camera& camera) : camera_(camera) {}
+    WebServer(Camera& camera, Detector& detector) : camera_(camera), detector_(detector) {}
     WebServer(const WebServer&) = delete;
     WebServer& operator=(const WebServer&) = delete;
     ~WebServer() { stop(); }
@@ -55,19 +56,32 @@ private:
     static esp_err_t handle_stream(httpd_req_t* request);
     static esp_err_t handle_settings(httpd_req_t* request);
     static esp_err_t handle_control(httpd_req_t* request);
+    static esp_err_t handle_reset(httpd_req_t* request);
     static esp_err_t handle_system(httpd_req_t* request);
-    static void stream_task(void* request);
+    static esp_err_t handle_detect(httpd_req_t* request);
+    static esp_err_t handle_detector_get(httpd_req_t* request);
+    static esp_err_t handle_detector_set(httpd_req_t* request);
+
+    using Job = void (WebServer::*)(httpd_req_t*);
+    // Moves a long-running request to its own task so the server keeps answering others.
+    esp_err_t run_async(httpd_req_t* request, Job job, std::atomic<std::size_t>& active, std::size_t limit,
+                        const char* task_name, std::uint32_t stack_size);
+    static void async_task(void* context);
+    struct AsyncContext;
 
     void stream(httpd_req_t* request);
+    void detect(httpd_req_t* request);
 
     Camera& camera_;
+    Detector& detector_;
     httpd_handle_t handle_ = nullptr;
     std::uint16_t port_ = 0;
     std::size_t max_streams_ = 0;
     std::string html_name_;
     std::int64_t started_at_ = 0;
-    std::atomic<bool> streaming_{false};
+    std::atomic<bool> accepting_{false};
     std::atomic<std::size_t> streams_{0};
+    std::atomic<std::size_t> detections_{0};
     std::atomic<std::uint64_t> frames_{0};
     std::atomic<std::uint64_t> bytes_{0};
     FrameRate frame_rate_;

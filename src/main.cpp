@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <cstdio>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -16,9 +16,9 @@ constexpr const char* TAG = "MAIN";
 
 static int cmd_info(int argc, char** argv)
 {
-    printf("ESP32-S3 N16R8\n");
-    printf("Reset reason: %d\n", esp_reset_reason());
-    printf("Free heap: %lu bytes\n", esp_get_free_heap_size());
+    std::printf("ESP32-S3 N16R8\n");
+    std::printf("Reset reason: %d\n", esp_reset_reason());
+    std::printf("Free heap: %lu bytes\n", esp_get_free_heap_size());
 
     return 0;
 }

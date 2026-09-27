@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "esp_camera.h"
 #include "esp_err.h"
@@ -27,11 +28,18 @@ public:
     [[nodiscard]] std::string_view model() const { return model_; }
     [[nodiscard]] framesize_t frame_size() const;
 
+    // Applies and persists a sensor setting; saved settings are restored on init().
     esp_err_t set(std::string_view control, int value);
+    // Restores the values the sensor had right after init() and forgets the saved ones.
+    esp_err_t reset();
     [[nodiscard]] std::string settings_json() const;
 
 private:
+    [[nodiscard]] bool in_range(std::string_view control, int value) const;
+    void restore_saved();
+
     sensor_t* sensor_ = nullptr;
+    std::vector<int> defaults_;
     framesize_t max_frame_size_ = FRAMESIZE_INVALID;
     std::string_view model_{};
 };

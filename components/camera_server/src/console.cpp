@@ -58,6 +58,12 @@ std::string server_url(std::uint16_t port)
     return url + '/';
 }
 
+void print_detector_status()
+{
+    const auto url = detector_url();
+    std::printf("Detector    : %s\n", url.empty() ? "disabled" : url.c_str());
+}
+
 void print_network_status()
 {
     if (const auto network = network_info(); !network) {
@@ -117,10 +123,30 @@ int camera_status()
         std::printf("Frames      : %llu (%s)\n", static_cast<unsigned long long>(s.frames),
                     format_bytes(static_cast<double>(s.bytes)).c_str());
     }
+    print_detector_status();
     print_network_status();
     std::printf("Memory      : %s free (internal), %s free (PSRAM)\n",
                 format_bytes(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)).c_str(),
                 format_bytes(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)).c_str());
+    return 0;
+}
+
+int camera_detector(std::optional<std::string_view> url)
+{
+    if (url) {
+        const std::string_view value = *url == "off" ? std::string_view{} : *url;
+        switch (set_detector_url(value)) {
+        case ESP_OK:
+            break;
+        case ESP_ERR_INVALID_ARG:
+            std::printf("Expected an http:// or https:// URL, e.g. http://192.168.0.10:8000/detect\n");
+            return 1;
+        default:
+            std::printf("Failed to save the detector URL.\n");
+            return 1;
+        }
+    }
+    print_detector_status();
     return 0;
 }
 
@@ -142,8 +168,19 @@ int camera_command(int argc, char** argv)
     if (action == "status" && argc <= 2) {
         return camera_status();
     }
+    if (action == "reset" && argc == 2) {
+        if (reset_settings() != ESP_OK) {
+            std::printf("Failed to restore the image settings.\n");
+            return 1;
+        }
+        std::printf("Image settings restored to defaults.\n");
+        return 0;
+    }
+    if (action == "detector" && argc <= 3) {
+        return camera_detector(argc == 3 ? std::optional<std::string_view>{argv[2]} : std::nullopt);
+    }
 
-    std::printf("Usage: camera <start [port] | stop | status>\n");
+    std::printf("Usage: camera <start [port] | stop | status | reset | detector [url | off]>\n");
     return 1;
 }
 
@@ -156,7 +193,7 @@ void register_commands(const Config& config)
     const esp_console_cmd_t camera_cmd = {
         .command = "camera",
         .help = "Controls the camera web server",
-        .hint = "<start [port] | stop | status>",
+        .hint = "<start [port] | stop | status | reset | detector [url | off]>",
         .func = &camera_command,
         .argtable = nullptr,
         .func_w_context = nullptr,

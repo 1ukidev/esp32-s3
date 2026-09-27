@@ -3,6 +3,7 @@
 #include <mutex>
 
 #include "camera.hpp"
+#include "detector.hpp"
 #include "web_server.hpp"
 
 namespace camera_server {
@@ -12,7 +13,8 @@ struct Service {
     std::mutex mutex;
     Config config;
     Camera camera;
-    WebServer server{camera};
+    Detector detector;
+    WebServer server{camera, detector};
 };
 
 Service& service()
@@ -28,6 +30,7 @@ void configure(const Config& config)
     auto& s = service();
     std::scoped_lock lock(s.mutex);
     s.config = config;
+    s.detector.set_default_url(config.detector_url);
 }
 
 esp_err_t start(std::optional<std::uint16_t> port)
@@ -85,6 +88,23 @@ Status status()
         .width = known_size ? resolution[frame_size].width : 0,
         .height = known_size ? resolution[frame_size].height : 0,
     };
+}
+
+esp_err_t reset_settings()
+{
+    auto& s = service();
+    std::scoped_lock lock(s.mutex);
+    return s.camera.reset();
+}
+
+std::string detector_url()
+{
+    return service().detector.url();
+}
+
+esp_err_t set_detector_url(std::string_view url)
+{
+    return service().detector.set_url(url);
 }
 
 }  // namespace camera_server

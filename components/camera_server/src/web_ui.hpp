@@ -158,6 +158,31 @@ select:focus-visible,input:focus-visible,button:focus-visible{outline:2px solid 
 .toast.out{opacity:0;transform:translateY(8px);transition:.25s}
 @keyframes toast-in{from{opacity:0;transform:translateY(8px)}}
 .scrim{display:none}
+.panel-foot{display:flex;flex-direction:column;align-items:center;gap:8px;padding:4px 0}
+.panel-foot .btn{width:100%}
+.btn.confirm{border-color:var(--danger);color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,var(--surface-2))}
+.overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--border-strong);
+  background:var(--surface-2);font-weight:600;cursor:pointer;white-space:nowrap;transition:.15s}
+.btn:hover{background:var(--surface-3)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.5;cursor:default;filter:none}
+.btn svg{width:16px;height:16px}
+.card-head h3{display:flex;align-items:center;gap:8px}
+.card-head h3 svg{width:16px;height:16px;color:var(--accent)}
+.detect-body{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px 28px;padding:14px 16px 16px}
+.field{display:flex;flex-direction:column;gap:8px}
+.field label{font-weight:500}
+.input-row{display:flex;gap:8px}
+.input-row input{flex:1;min-width:0;height:38px;padding:0 12px;border-radius:10px;border:1px solid var(--border-strong);background:var(--surface-2)}
+.muted{color:var(--muted);font-size:12px}
+.det-side{display:flex;flex-direction:column;gap:14px}
+.det-side .row{padding:0;border:0}
+.det-results{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding-top:14px;border-top:1px solid var(--border)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:28px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);font-size:12px;font-weight:600}
+.chip i{width:8px;height:8px;border-radius:50%}
 .hint{color:var(--muted);font-size:12px;text-align:center;padding:4px}
 kbd{padding:1px 6px;border-radius:5px;border:1px solid var(--border-strong);background:var(--surface-2);font-family:inherit;font-size:11px}
 
@@ -180,6 +205,7 @@ kbd{padding:1px 6px;border-radius:5px;border:1px solid var(--border-strong);back
   .toolbar .label{display:none}
   .viewer.has-frame .toolbar{opacity:1!important}
   .hint{display:none}
+  .detect-body{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -205,6 +231,7 @@ kbd{padding:1px 6px;border-radius:5px;border:1px solid var(--border-strong);back
   <section class="stage">
     <div class="viewer" id="viewer">
       <img id="stream" data-i18n-alt="stream_alt">
+      <canvas class="overlay" id="overlay"></canvas>
       <div class="flash" id="flash"></div>
       <div class="badge"><span id="badge-res">—</span><span id="badge-fps">0 fps</span></div>
       <div class="placeholder" id="placeholder">
@@ -216,6 +243,7 @@ kbd{padding:1px 6px;border-radius:5px;border:1px solid var(--border-strong);back
         <button id="play" data-i18n-title="play_title"><svg viewBox="0 0 24 24" id="play-icon"></svg><span class="label" id="play-label"></span></button>
         <span class="sep"></span>
         <button id="snap" data-i18n-title="snap_title"><svg viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg><span class="label" data-i18n="snap"></span></button>
+        <button id="detect" data-i18n-title="det_photo_title"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg><span class="label" data-i18n="det_short"></span></button>
         <button id="fullscreen" data-i18n-title="fullscreen_title"><svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
       </div>
     </div>
@@ -227,6 +255,35 @@ kbd{padding:1px 6px;border-radius:5px;border:1px solid var(--border-strong);back
       <div class="stat"><span data-i18n="stat_bytes"></span><strong id="st-bytes">—</strong></div>
       <div class="stat"><span data-i18n="stat_signal"></span><strong id="st-rssi">—</strong></div>
       <div class="stat" data-i18n-title="memory_hint"><span data-i18n="stat_memory"></span><strong id="st-heap">—</strong></div>
+    </div>
+
+    <div class="card" id="detector">
+      <div class="card-head">
+        <h3><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg><span data-i18n="det_title"></span></h3>
+        <span class="pill" id="det-status"><i class="dot"></i><span></span></span>
+      </div>
+      <div class="detect-body">
+        <div class="field">
+          <label for="det-url" data-i18n="det_url"></label>
+          <form class="input-row" id="det-form">
+            <input type="url" id="det-url" placeholder="http://192.168.0.10:8000/detect" spellcheck="false" autocomplete="off">
+            <button class="btn" type="submit" data-i18n="save"></button>
+          </form>
+          <span class="muted" data-i18n="det_url_hint"></span>
+        </div>
+        <div class="det-side">
+          <div class="row inline"><label for="det-live" data-i18n="det_live"></label><span class="switch"><input type="checkbox" role="switch" id="det-live"><i></i></span></div>
+          <div class="row">
+            <div class="row-head"><label for="det-conf" data-i18n="det_conf"></label><output id="det-conf-value"></output></div>
+            <input type="range" id="det-conf" min="5" max="95" step="5" value="25">
+          </div>
+          <button class="btn primary" id="det-photo"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg><span data-i18n="det_photo"></span></button>
+        </div>
+        <div class="det-results">
+          <div class="chips" id="det-chips"></div>
+          <span class="muted" id="det-meta"></span>
+        </div>
+      </div>
     </div>
 
     <div class="card" id="shots" hidden>
@@ -241,6 +298,10 @@ kbd{padding:1px 6px;border-radius:5px;border:1px solid var(--border-strong);back
       <button class="icon-btn" id="panel-close" data-i18n-aria="close_settings"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div id="controls"></div>
+    <div class="panel-foot">
+      <button class="btn" id="reset-settings"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span id="reset-label"></span></button>
+      <span class="muted" data-i18n="settings_saved"></span>
+    </div>
     <div class="hint" data-i18n-html="shortcuts"></div>
   </aside>
 </main>
@@ -279,7 +340,20 @@ const I18N = {
     stat_signal: 'Sinal Wi-Fi', stat_memory: 'Memória livre', memory_hint: 'RAM interna · PSRAM',
     signal: ['Ótimo', 'Bom', 'Regular', 'Fraco'],
     shots_title: 'Fotos desta sessão', clear: 'Limpar', download: 'Baixar {0}',
-    shortcuts: '<kbd>Espaço</kbd> transmissão · <kbd>S</kbd> foto · <kbd>F</kbd> tela cheia',
+    shortcuts: '<kbd>Espaço</kbd> transmissão · <kbd>S</kbd> foto · <kbd>D</kbd> detectar · <kbd>F</kbd> tela cheia',
+    reset: 'Restaurar padrões', reset_confirm: 'Clique de novo para confirmar', reset_done: 'Ajustes restaurados para o padrão',
+    reset_failed: 'Não foi possível restaurar os ajustes', settings_saved: 'Os ajustes ficam salvos na câmera.',
+    det_title: 'Detecção de objetos (YOLO)', det_url: 'Endereço da API', save: 'Salvar',
+    det_url_hint: 'Endpoint POST que recebe a imagem no campo “file”. Deixe vazio para desativar.',
+    det_live: 'Detecção ao vivo', det_conf: 'Confiança mínima', det_photo: 'Detectar em uma foto', det_short: 'Detectar',
+    det_photo_title: 'Detectar objetos em uma foto (D)',
+    det_state_off: 'Não configurado', det_state_ready: 'Pronto', det_state_live: 'Ao vivo',
+    det_saved: 'Endereço da API salvo', det_cleared: 'Detecção desativada', det_invalid_url: 'Use um endereço http:// ou https://',
+    det_save_failed: 'Não foi possível salvar o endereço', det_not_configured: 'Configure o endereço da API YOLO primeiro',
+    det_unreachable: 'A API YOLO não respondeu', det_bad_response: 'A API YOLO retornou uma resposta inválida',
+    det_busy: 'O detector está ocupado, tente novamente', det_failed: 'Falha na detecção',
+    det_none: 'Nenhum objeto detectado', det_found: '{0} objeto(s) detectado(s)', det_idle: 'Os objetos detectados aparecem aqui.',
+    det_meta_live: '{0} ms por detecção · {1} detecções/s', det_meta_photo: 'Foto analisada em {0} ms',
     photo_taken: 'Foto capturada', photo_failed: 'Falha ao capturar a foto', stream_lost: 'Transmissão interrompida',
     settings_failed: 'Não foi possível ler os ajustes da câmera', control_failed: 'Não foi possível ajustar “{0}”',
     sec_image: 'Imagem', sec_exposure: 'Exposição e ganho', sec_wb: 'Balanço de branco', sec_advanced: 'Avançado',
@@ -308,7 +382,20 @@ const I18N = {
     stat_signal: 'Wi-Fi signal', stat_memory: 'Free memory', memory_hint: 'Internal RAM · PSRAM',
     signal: ['Excellent', 'Good', 'Fair', 'Weak'],
     shots_title: 'Photos from this session', clear: 'Clear', download: 'Download {0}',
-    shortcuts: '<kbd>Space</kbd> stream · <kbd>S</kbd> photo · <kbd>F</kbd> fullscreen',
+    shortcuts: '<kbd>Space</kbd> stream · <kbd>S</kbd> photo · <kbd>D</kbd> detect · <kbd>F</kbd> fullscreen',
+    reset: 'Restore defaults', reset_confirm: 'Click again to confirm', reset_done: 'Settings restored to defaults',
+    reset_failed: 'Could not restore the settings', settings_saved: 'Settings are saved on the camera.',
+    det_title: 'Object detection (YOLO)', det_url: 'API endpoint', save: 'Save',
+    det_url_hint: 'POST endpoint that receives the image in the “file” field. Leave empty to disable.',
+    det_live: 'Live detection', det_conf: 'Minimum confidence', det_photo: 'Detect on a photo', det_short: 'Detect',
+    det_photo_title: 'Detect objects on a photo (D)',
+    det_state_off: 'Not configured', det_state_ready: 'Ready', det_state_live: 'Live',
+    det_saved: 'API endpoint saved', det_cleared: 'Detection disabled', det_invalid_url: 'Use an http:// or https:// address',
+    det_save_failed: 'Could not save the endpoint', det_not_configured: 'Set the YOLO API endpoint first',
+    det_unreachable: 'The YOLO API did not respond', det_bad_response: 'The YOLO API returned an invalid response',
+    det_busy: 'The detector is busy, try again', det_failed: 'Detection failed',
+    det_none: 'No objects detected', det_found: '{0} object(s) detected', det_idle: 'Detected objects show up here.',
+    det_meta_live: '{0} ms per detection · {1} detections/s', det_meta_photo: 'Photo analyzed in {0} ms',
     photo_taken: 'Photo captured', photo_failed: 'Failed to take the photo', stream_lost: 'Stream interrupted',
     settings_failed: 'Could not read the camera settings', control_failed: 'Could not change “{0}”',
     sec_image: 'Image', sec_exposure: 'Exposure & gain', sec_wb: 'White balance', sec_advanced: 'Advanced',
@@ -384,14 +471,23 @@ let placeholder = 'paused';
 
 async function request(url, options) {
   const response = await fetch(url, { cache: 'no-store', ...options });
-  if (!response.ok) throw new Error((await response.text()) || response.statusText);
+  if (!response.ok) {
+    const error = new Error((await response.text()) || response.statusText);
+    error.status = response.status;
+    throw error;
+  }
   return response;
 }
 const api = {
   settings: () => request('/api/settings').then((r) => r.json()),
   system: () => request('/api/system').then((r) => r.json()),
+  reset: () => request('/api/reset', { method: 'POST' }).then((r) => r.json()),
   control: (id, value) => request(`/api/control?var=${id}&val=${value}`, { method: 'POST' }).then((r) => r.json()),
   capture: () => request(`/capture?t=${Date.now()}`).then((r) => r.blob()),
+  detector: () => request('/api/detector').then((r) => r.json()),
+  setDetector: (url) => request('/api/detector', { method: 'POST', body: url }).then((r) => r.json()),
+  detectLive: () => request('/api/detect').then((r) => r.json()),
+  detectImage: (blob) => request('/api/detect', { method: 'POST', body: blob, headers: { 'Content-Type': 'image/jpeg' } }).then((r) => r.json()),
 };
 
 function toast(message, type = 'ok') {
@@ -520,6 +616,7 @@ function startStream() {
 
 function stopStream(reason = 'paused') {
   streaming = false;
+  if (detection.live) setLive(false);
   img.src = 'data:,';
   viewer.classList.remove('has-frame');
   placeholder = reason;
@@ -541,10 +638,7 @@ async function snapshot() {
   button.disabled = true;
   try {
     const blob = await api.capture();
-    const flash = $('#flash');
-    flash.classList.remove('go');
-    void flash.offsetWidth;
-    flash.classList.add('go');
+    flash();
     addShot(blob);
     toast(t('photo_taken'));
   } catch {
@@ -554,11 +648,18 @@ async function snapshot() {
   }
 }
 
-function addShot(blob) {
+function flash() {
+  const node = $('#flash');
+  node.classList.remove('go');
+  void node.offsetWidth;
+  node.classList.add('go');
+}
+
+function addShot(blob, suffix = '') {
   const now = new Date();
   const url = URL.createObjectURL(blob);
   const pad = (n) => String(n).padStart(2, '0');
-  const name = `${fileSlug}_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.jpg`;
+  const name = `${fileSlug}_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${suffix && `_${suffix}`}.jpg`;
   const link = document.createElement('a');
   link.className = 'shot';
   link.href = url;
@@ -636,7 +737,10 @@ function renderSystem() {
 async function poll() {
   try {
     system = await api.system();
-    if (online === false) api.settings().then(applySettings).catch(() => {});
+    if (online === false) {
+      api.settings().then(applySettings).catch(() => {});
+      loadDetector();
+    }
     online = true;
     renderSystem();
   } catch {
@@ -662,6 +766,236 @@ function setLanguage(next) {
   updatePlayButton();
   renderSystem();
   localizeShots();
+  updateDetectorStatus();
+  renderDetections();
+  updateResetLabel();
+}
+
+const detection = { url: '', live: false, busy: false, minConfidence: 0.25, last: null, latency: 0, rate: 0, summary: null };
+const overlay = $('#overlay');
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function colorFor(name) {
+  let hash = 0;
+  for (const c of String(name)) hash = (hash * 31 + c.charCodeAt(0)) >>> 0;
+  return `hsl(${hash % 360} 80% 45%)`;
+}
+
+function visibleDetections(response) {
+  const list = response?.result?.detections;
+  return Array.isArray(list) ? list.filter((d) => Array.isArray(d.bbox) && d.confidence >= detection.minConfidence) : [];
+}
+
+function drawBoxes(ctx, detections, scale, lineWidth, fontSize) {
+  ctx.lineWidth = lineWidth;
+  ctx.font = `600 ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+  ctx.textBaseline = 'middle';
+  for (const d of detections) {
+    const [x1, y1, x2, y2] = d.bbox.map((v) => v * scale);
+    const color = colorFor(d.class);
+    ctx.strokeStyle = color;
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    const label = `${d.class} ${Math.round(d.confidence * 100)}%`;
+    const width = ctx.measureText(label).width + fontSize * 0.8;
+    const height = fontSize * 1.5;
+    const top = y1 - height < 0 ? y1 : y1 - height;
+    ctx.fillStyle = color;
+    ctx.fillRect(x1 - lineWidth / 2, top, width, height);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, x1 - lineWidth / 2 + fontSize * 0.4, top + height / 2);
+  }
+}
+
+function drawOverlay() {
+  const ratio = window.devicePixelRatio || 1;
+  const width = overlay.clientWidth;
+  const height = overlay.clientHeight;
+  overlay.width = Math.round(width * ratio);
+  overlay.height = Math.round(height * ratio);
+  const ctx = overlay.getContext('2d');
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const response = detection.last;
+  if (!detection.live || !streaming || !response?.width) return;
+  const scale = Math.min(width / response.width, height / response.height);
+  ctx.translate((width - response.width * scale) / 2, (height - response.height * scale) / 2);
+  drawBoxes(ctx, visibleDetections(response), scale, 2, 12);
+}
+
+function renderDetections() {
+  const chips = $('#det-chips');
+  const summary = detection.summary;
+  if (!summary) {
+    chips.replaceChildren(Object.assign(document.createElement('span'), { className: 'muted', textContent: t('det_idle') }));
+    $('#det-meta').textContent = '';
+    return;
+  }
+  const detections = summary.live ? visibleDetections(detection.last) : summary.detections;
+  const counts = new Map();
+  for (const d of detections) counts.set(d.class, (counts.get(d.class) || 0) + 1);
+  const nodes = [...counts].sort((a, b) => b[1] - a[1]).map(([name, count]) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    const dot = document.createElement('i');
+    dot.style.background = colorFor(name);
+    chip.append(dot, `${name} × ${count}`);
+    return chip;
+  });
+  chips.replaceChildren(...(nodes.length ? nodes : [Object.assign(document.createElement('span'), { className: 'muted', textContent: t('det_none') })]));
+  $('#det-meta').textContent = summary.live
+    ? t('det_meta_live', detection.latency, detection.rate.toLocaleString(t('locale'), { maximumFractionDigits: 1 }))
+    : t('det_meta_photo', summary.latency);
+}
+
+function updateDetectorStatus() {
+  const state = !detection.url ? 'off' : detection.live ? 'live' : 'ready';
+  const pill = $('#det-status');
+  pill.className = `pill ${{ off: '', ready: 'online', live: 'live' }[state]}`;
+  pill.querySelector('span').textContent = t(`det_state_${state}`);
+  $('#det-live').checked = detection.live;
+  $('#det-live').disabled = !detection.url;
+  $('#det-photo').disabled = !detection.url || detection.busy;
+  $('#detect').disabled = !detection.url || detection.busy;
+}
+
+function detectionError(error) {
+  const messages = { 409: 'det_not_configured', 502: 'det_bad_response', 503: 'det_busy', 504: 'det_unreachable' };
+  return t(messages[error.status] || 'det_failed');
+}
+
+function setLive(on) {
+  if (on && !detection.url) {
+    toast(t('det_not_configured'), 'error');
+    on = false;
+  }
+  const starting = on && !detection.live;
+  detection.live = on;
+  if (on && !streaming) startStream();
+  if (!on) {
+    detection.last = null;
+    if (detection.summary?.live) detection.summary = null;
+  }
+  updateDetectorStatus();
+  drawOverlay();
+  renderDetections();
+  if (starting) liveLoop();
+}
+
+async function liveLoop() {
+  let failures = 0;
+  while (detection.live) {
+    const started = performance.now();
+    try {
+      const response = await api.detectLive();
+      if (!detection.live) break;
+      const rate = 1000 / (performance.now() - started);
+      detection.rate = detection.rate ? detection.rate * 0.7 + rate * 0.3 : rate;
+      detection.latency = response.latency_ms;
+      detection.last = response;
+      detection.summary = { live: true };
+      failures = 0;
+      drawOverlay();
+      renderDetections();
+    } catch (error) {
+      if (!detection.live) break;
+      if (error.status === 503) { await sleep(250); continue; }
+      toast(detectionError(error), 'error');
+      if (error.status === 409 || ++failures >= 3) { setLive(false); break; }
+      await sleep(1000);
+    }
+    await sleep(Math.max(0, 100 - (performance.now() - started)));
+  }
+}
+
+async function detectPhoto() {
+  if (!detection.url) { toast(t('det_not_configured'), 'error'); return; }
+  if (detection.busy) return;
+  detection.busy = true;
+  updateDetectorStatus();
+  try {
+    const blob = await api.capture();
+    flash();
+    const response = await api.detectImage(blob);
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    const detections = visibleDetections(response);
+    const size = Math.min(bitmap.width, bitmap.height);
+    drawBoxes(ctx, detections, 1, Math.max(2, size / 240), Math.max(12, Math.round(size / 32)));
+    addShot(await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92)), 'yolo');
+    if (!detection.live) {
+      detection.summary = { live: false, detections, latency: response.latency_ms };
+      renderDetections();
+    }
+    toast(detections.length ? t('det_found', detections.length) : t('det_none'));
+  } catch (error) {
+    toast(detectionError(error), 'error');
+  } finally {
+    detection.busy = false;
+    updateDetectorStatus();
+  }
+}
+
+async function loadDetector() {
+  try {
+    const { url } = await api.detector();
+    detection.url = url;
+    $('#det-url').value = url;
+  } catch {}
+  updateDetectorStatus();
+}
+
+async function saveDetector(event) {
+  event.preventDefault();
+  const url = $('#det-url').value.trim();
+  if (url && !/^https?:\/\//i.test(url)) { toast(t('det_invalid_url'), 'error'); return; }
+  try {
+    detection.url = (await api.setDetector(url)).url;
+    $('#det-url').value = detection.url;
+    toast(t(detection.url ? 'det_saved' : 'det_cleared'));
+    if (!detection.url) setLive(false);
+  } catch {
+    toast(t('det_save_failed'), 'error');
+  }
+  updateDetectorStatus();
+}
+
+function paintConfidence() {
+  const input = $('#det-conf');
+  detection.minConfidence = Number(input.value) / 100;
+  input.style.setProperty('--p', `${((input.value - input.min) / (input.max - input.min)) * 100}%`);
+  $('#det-conf-value').textContent = `${input.value}%`;
+}
+
+let resetTimer = null;
+
+function updateResetLabel() {
+  $('#reset-label').textContent = t($('#reset-settings').classList.contains('confirm') ? 'reset_confirm' : 'reset');
+}
+
+async function resetSettings() {
+  const button = $('#reset-settings');
+  if (!button.classList.contains('confirm')) {
+    button.classList.add('confirm');
+    updateResetLabel();
+    resetTimer = setTimeout(() => { button.classList.remove('confirm'); updateResetLabel(); }, 3000);
+    return;
+  }
+  clearTimeout(resetTimer);
+  button.classList.remove('confirm');
+  button.disabled = true;
+  updateResetLabel();
+  try {
+    applySettings(await api.reset());
+    toast(t('reset_done'));
+  } catch {
+    toast(t('reset_failed'), 'error');
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function setPanel(open) {
@@ -673,6 +1007,13 @@ $('#play').addEventListener('click', toggleStream);
 $('#play-big').addEventListener('click', () => { if (!streaming) startStream(); });
 $('#snap').addEventListener('click', snapshot);
 $('#fullscreen').addEventListener('click', toggleFullscreen);
+$('#detect').addEventListener('click', detectPhoto);
+$('#reset-settings').addEventListener('click', resetSettings);
+$('#det-photo').addEventListener('click', detectPhoto);
+$('#det-form').addEventListener('submit', saveDetector);
+$('#det-live').addEventListener('change', (e) => setLive(e.target.checked));
+$('#det-conf').addEventListener('input', () => { paintConfidence(); drawOverlay(); if (detection.summary?.live) renderDetections(); });
+new ResizeObserver(drawOverlay).observe(viewer);
 $('#clear-shots').addEventListener('click', clearShots);
 $('#panel-toggle').addEventListener('click', () => setPanel(true));
 $('#panel-close').addEventListener('click', () => setPanel(false));
@@ -680,14 +1021,16 @@ $('#scrim').addEventListener('click', () => setPanel(false));
 for (const button of document.querySelectorAll('[data-lang]')) button.addEventListener('click', () => setLanguage(button.dataset.lang));
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input,select,textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
-  const actions = { ' ': toggleStream, s: snapshot, f: toggleFullscreen };
+  const actions = { ' ': toggleStream, s: snapshot, f: toggleFullscreen, d: detectPhoto };
   const action = actions[e.key.toLowerCase()];
   if (action) { e.preventDefault(); action(); }
 });
 setInterval(updateStatus, 1000);
 
 buildControls();
+paintConfidence();
 setLanguage(lang);
+loadDetector();
 api.settings().then(applySettings).catch(() => toast(t('settings_failed'), 'error'));
 poll();
 startStream();

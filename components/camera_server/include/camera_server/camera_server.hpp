@@ -45,6 +45,9 @@ struct Config {
     bool vertical_flip = true;
     std::uint16_t port = 80;
     std::size_t max_streams = 3;
+    // Endpoint of an external YOLO API, e.g. "http://192.168.0.10:8000/detect".
+    // A URL saved later from the web interface or the console takes precedence.
+    std::string detector_url{};
 };
 
 struct Status {
@@ -66,6 +69,13 @@ void configure(const Config& config);
 esp_err_t start(std::optional<std::uint16_t> port = std::nullopt);
 esp_err_t stop();
 Status status();
+
+// Restores the image settings to their defaults and forgets the saved ones.
+esp_err_t reset_settings();
+
+// Empty disables object detection. The value is persisted in NVS.
+std::string detector_url();
+esp_err_t set_detector_url(std::string_view url);
 
 // Registers the "camera" command in the ESP-IDF console.
 void register_commands(const Config& config = {});

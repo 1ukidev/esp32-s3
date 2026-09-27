@@ -2,16 +2,19 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <type_traits>
 
 #include "esp_log.h"
 
 #include "json.hpp"
+#include "storage.hpp"
 
 namespace camera_server {
 namespace {
 
 constexpr const char* TAG = "camera";
+constexpr const char* settings_namespace = "cam_settings";
 
 template <typename Setter>
 struct SetterArgument;
@@ -40,37 +43,50 @@ int apply_xclk(sensor_t* sensor, int mhz)
     return sensor->set_xclk != nullptr ? sensor->set_xclk(sensor, LEDC_TIMER_0, mhz) : -1;
 }
 
+template <auto Field>
+int read(const sensor_t* sensor)
+{
+    return static_cast<int>(sensor->status.*Field);
+}
+
+int read_xclk(const sensor_t* sensor)
+{
+    return sensor->xclk_freq_hz / 1'000'000;
+}
+
+// Names double as NVS keys, so they must stay within 15 characters.
 struct Control {
     std::string_view name;
     int (*apply)(sensor_t*, int);
+    int (*read)(const sensor_t*);
 };
 
 constexpr std::array controls{
-    Control{"framesize", apply<&sensor_t::set_framesize>},
-    Control{"quality", apply<&sensor_t::set_quality>},
-    Control{"brightness", apply<&sensor_t::set_brightness>},
-    Control{"contrast", apply<&sensor_t::set_contrast>},
-    Control{"saturation", apply<&sensor_t::set_saturation>},
-    Control{"special_effect", apply<&sensor_t::set_special_effect>},
-    Control{"hmirror", apply<&sensor_t::set_hmirror>},
-    Control{"vflip", apply<&sensor_t::set_vflip>},
-    Control{"awb", apply<&sensor_t::set_whitebal>},
-    Control{"awb_gain", apply<&sensor_t::set_awb_gain>},
-    Control{"wb_mode", apply<&sensor_t::set_wb_mode>},
-    Control{"aec", apply<&sensor_t::set_exposure_ctrl>},
-    Control{"aec2", apply<&sensor_t::set_aec2>},
-    Control{"ae_level", apply<&sensor_t::set_ae_level>},
-    Control{"aec_value", apply<&sensor_t::set_aec_value>},
-    Control{"agc", apply<&sensor_t::set_gain_ctrl>},
-    Control{"agc_gain", apply<&sensor_t::set_agc_gain>},
-    Control{"gainceiling", apply<&sensor_t::set_gainceiling>},
-    Control{"bpc", apply<&sensor_t::set_bpc>},
-    Control{"wpc", apply<&sensor_t::set_wpc>},
-    Control{"raw_gma", apply<&sensor_t::set_raw_gma>},
-    Control{"lenc", apply<&sensor_t::set_lenc>},
-    Control{"dcw", apply<&sensor_t::set_dcw>},
-    Control{"colorbar", apply<&sensor_t::set_colorbar>},
-    Control{"xclk", apply_xclk},
+    Control{"framesize", apply<&sensor_t::set_framesize>, read<&camera_status_t::framesize>},
+    Control{"quality", apply<&sensor_t::set_quality>, read<&camera_status_t::quality>},
+    Control{"brightness", apply<&sensor_t::set_brightness>, read<&camera_status_t::brightness>},
+    Control{"contrast", apply<&sensor_t::set_contrast>, read<&camera_status_t::contrast>},
+    Control{"saturation", apply<&sensor_t::set_saturation>, read<&camera_status_t::saturation>},
+    Control{"special_effect", apply<&sensor_t::set_special_effect>, read<&camera_status_t::special_effect>},
+    Control{"hmirror", apply<&sensor_t::set_hmirror>, read<&camera_status_t::hmirror>},
+    Control{"vflip", apply<&sensor_t::set_vflip>, read<&camera_status_t::vflip>},
+    Control{"awb", apply<&sensor_t::set_whitebal>, read<&camera_status_t::awb>},
+    Control{"awb_gain", apply<&sensor_t::set_awb_gain>, read<&camera_status_t::awb_gain>},
+    Control{"wb_mode", apply<&sensor_t::set_wb_mode>, read<&camera_status_t::wb_mode>},
+    Control{"aec", apply<&sensor_t::set_exposure_ctrl>, read<&camera_status_t::aec>},
+    Control{"aec2", apply<&sensor_t::set_aec2>, read<&camera_status_t::aec2>},
+    Control{"ae_level", apply<&sensor_t::set_ae_level>, read<&camera_status_t::ae_level>},
+    Control{"aec_value", apply<&sensor_t::set_aec_value>, read<&camera_status_t::aec_value>},
+    Control{"agc", apply<&sensor_t::set_gain_ctrl>, read<&camera_status_t::agc>},
+    Control{"agc_gain", apply<&sensor_t::set_agc_gain>, read<&camera_status_t::agc_gain>},
+    Control{"gainceiling", apply<&sensor_t::set_gainceiling>, read<&camera_status_t::gainceiling>},
+    Control{"bpc", apply<&sensor_t::set_bpc>, read<&camera_status_t::bpc>},
+    Control{"wpc", apply<&sensor_t::set_wpc>, read<&camera_status_t::wpc>},
+    Control{"raw_gma", apply<&sensor_t::set_raw_gma>, read<&camera_status_t::raw_gma>},
+    Control{"lenc", apply<&sensor_t::set_lenc>, read<&camera_status_t::lenc>},
+    Control{"dcw", apply<&sensor_t::set_dcw>, read<&camera_status_t::dcw>},
+    Control{"colorbar", apply<&sensor_t::set_colorbar>, read<&camera_status_t::colorbar>},
+    Control{"xclk", apply_xclk, read_xclk},
 };
 
 }  // namespace
@@ -131,6 +147,12 @@ esp_err_t Camera::init(const Config& config)
     }
     sensor_->set_framesize(sensor_, std::min(config.initial_frame_size, max_frame_size_));
 
+    defaults_.clear();
+    for (const auto& control : controls) {
+        defaults_.push_back(control.read(sensor_));
+    }
+    restore_saved();
+
     ESP_LOGI(TAG, "Sensor %.*s ready", static_cast<int>(model_.size()), model_.data());
     return ESP_OK;
 }
@@ -149,23 +171,68 @@ framesize_t Camera::frame_size() const
     return ready() ? sensor_->status.framesize : FRAMESIZE_INVALID;
 }
 
+bool Camera::in_range(std::string_view name, int value) const
+{
+    if (name == "framesize") {
+        return value >= 0 && value <= static_cast<int>(max_frame_size_);
+    }
+    if (name == "xclk") {
+        return value >= min_xclk_mhz && value <= max_xclk_mhz;
+    }
+    return true;
+}
+
 esp_err_t Camera::set(std::string_view name, int value)
 {
     if (!ready()) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (name == "framesize" && (value < 0 || value > static_cast<int>(max_frame_size_))) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    if (name == "xclk" && (value < min_xclk_mhz || value > max_xclk_mhz)) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
     const auto control = std::ranges::find(controls, name, &Control::name);
     if (control == controls.end()) {
         return ESP_ERR_NOT_FOUND;
     }
-    return control->apply(sensor_, value) == 0 ? ESP_OK : ESP_FAIL;
+    if (!in_range(name, value)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (control->apply(sensor_, value) != 0) {
+        return ESP_FAIL;
+    }
+
+    if (const auto store = NvsNamespace::open(settings_namespace, NVS_READWRITE);
+        !store || nvs_set_i32(store->get(), control->name.data(), value) != ESP_OK || nvs_commit(store->get()) != ESP_OK) {
+        ESP_LOGW(TAG, "Could not persist '%.*s'", static_cast<int>(name.size()), name.data());
+    }
+    return ESP_OK;
+}
+
+void Camera::restore_saved()
+{
+    const auto store = NvsNamespace::open(settings_namespace, NVS_READONLY);
+    if (!store) {
+        return;
+    }
+    // Table order matters: automatic modes are restored before the manual values that depend on them.
+    for (const auto& control : controls) {
+        std::int32_t value = 0;
+        if (nvs_get_i32(store->get(), control.name.data(), &value) == ESP_OK && in_range(control.name, value)) {
+            control.apply(sensor_, value);
+        }
+    }
+}
+
+esp_err_t Camera::reset()
+{
+    if (const auto store = NvsNamespace::open(settings_namespace, NVS_READWRITE)) {
+        nvs_erase_all(store->get());
+        nvs_commit(store->get());
+    }
+    if (!ready()) {
+        return ESP_OK;
+    }
+    for (std::size_t i = 0; i < controls.size() && i < defaults_.size(); ++i) {
+        controls[i].apply(sensor_, defaults_[i]);
+    }
+    return ESP_OK;
 }
 
 std::string Camera::settings_json() const
